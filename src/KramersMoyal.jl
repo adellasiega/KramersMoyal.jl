@@ -120,101 +120,177 @@ function estimate_kramers_moyal_ensemble(Y::Matrix{Float64},
     return (y=y, coefficients=ensemble_coeffs)
 end
 
+
 """
     estimate_kramers_moyal_time(
         y::Vector{Float64},
-        t::Vector{Float64},
+        t::Vector{Float64};
         lag::Int=1,
         order::Int=2,
         n_y_bins::Int=100,
-        n_t_bins::Int=50)
+        n_t_bins::Int=50,
+        y_min::Union{Nothing,Float64}=nothing,
+        y_max::Union{Nothing,Float64}=nothing,
+        t_min::Union{Nothing,Float64}=nothing,
+        t_max::Union{Nothing,Float64}=nothing,
+    )
 
-Estimate time-dependent Kramers–Moyal coefficients D(y,t).
-Returns (y_centers, t_centers, coefficients::Dict{Int, Matrix}).
-Each coefficient[n] is an n_y_bins × n_t_bins matrix.
+Estimate time-dependent Kramers–Moyal coefficients D_n(y,t).
+
+Returns:
+    (y = y_centers,
+     t = t_centers,
+     coefficients = Dict{Int, Matrix{Float64}},   # each n_y_bins × n_t_bins
+     counts = Matrix{Int})                        # sample counts per bin
 """
 function estimate_kramers_moyal_time(
     y::Vector{Float64},
-    t::Vector{Float64},
+    t::Vector{Float64};
+    lag::Int=1,
+    order::Int=2,
+    n_y_bins::Int=100,
+    n_t_bins::Int=50,
+    y_min::Union{Nothing,Float64}=nothing,
+    y_max::Union{Nothing,Float64}=nothing,
+    t_min::Union{Nothing,Float64}=nothing,
+    t_max::Union{Nothing,Float64}=nothing,
+)
+
+    N = length(y)
+    @assert length(t) == N "y and t must have same length"
+    @assert N > lag "Time series too short for chosen lag"
+
+    # Bin edges (optionally fixed to external ranges)
+    ylo = isnothing(y_min) ? minimum(y) : y_min
+    yhi = isnothing(y_max) ? maximum(y) : y_max
+    tlo = isnothing(t_min) ? minimum(t) : t_min
+    thi = isnothing(t_max) ? maximum(t) : t_max
+
+    y_edges = range(ylo, stop=yhi, length=n_y_bins+1)
+    t_edges = range(tlo, stop=thi, length=n_t_bins+1)
+    y_centers = 0.5 .* (y_edges[1:end-1] .+ y_edges[2:end])
+    t_centers = 0.5 .* (t_edges[1:end-1] .+ t_edges[2:end])
+
+    # Allocate coefficient matrices and counts
+    coeffs = Dict{Int, Matrix{Float64}}()
+    for n in 1:order
+        coeffs[n] = fill(NaN, n_y_bins, n_t_bins)
+    end
+    counts = zeros(Int, n_y_bins, n_t_bins)
+
+    # Precompute bin ids for each sample (y,t)
+    # clamp to ensure edge cases fall into last bin
+    y_ids = clamp.(searchsortedlast.(Ref(y_edges), y), 1, n_y_bins)
+    t_ids = clamp.(searchsortedlast.(Ref(t_edges), t), 1, n_t_bins)
+
+    # For each bin, collect valid indices k such that k ≤ N - lag
+    # Use vectors of vectors to avoid repeated findall
+    idx_bins = [Int[] for _ in 1:(n_y_bins*n_t_bins)]
+    @inbounds for k in 1:(N-lag)
+        bi = y_ids[k]
+        bj = t_ids[k]
+        push!(idx_bins[(bj-1)*n_y_bins + bi], k)
+    end
+
+    # Compute per-bin statistics
+    @inbounds for j in 1:n_t_bins, i in 1:n_y_bins
+        bin_list = idx_bins[(j-1)*n_y_bins + i]
+        m = length(bin_list)
+        counts[i, j] = m
+        if m == 0
+            continue
+        end
+        Δy = y[bin_list .+ lag] .- y[bin_list]
+        for n in 1:order
+            coeffs[n][i, j] = mean(Δy .^ n) / (factorial(n) * lag)
+        end
+    end
+
+    return (y=y_centers, t=t_centers, coefficients=coeffs, counts=counts)
+end
+
+
+"""
+    estimate_kramers_moyal_time_ensemble(
+        Y::Matrix{Float64},
+        t::Vector{Float64};
+        lag::Int=1,
+        order::Int=2,
+        n_y_bins::Int=100,
+        n_t_bins::Int=50
+    )
+
+Ensemble-average time-dependent Kramers–Moyal coefficients using
+sample-count weighting across trajectories.
+
+Returns:
+    (y, t, coefficients::Dict{Int, Matrix{Float64}}, counts::Matrix{Int})
+"""
+function estimate_kramers_moyal_time_ensemble(
+    Y::Matrix{Float64},
+    t::Vector{Float64};
     lag::Int=1,
     order::Int=2,
     n_y_bins::Int=100,
     n_t_bins::Int=50
 )
+    n_traj, N = size(Y)
+    @assert length(t) == N "Each trajectory must have same length as t"
+    @assert N > lag "Time series too short for chosen lag"
 
-    N = length(y)
-    @assert length(t) == N "y and t must have same length"
+    # Global ranges to ensure consistent binning across trajectories
+    y_min = minimum(Y)
+    y_max = maximum(Y)
+    t_min = minimum(t)
+    t_max = maximum(t)
 
-    # Bin edges
-    y_edges = range(minimum(y), stop=maximum(y), length=n_y_bins+1)
-    y_centers = 0.5 .* (y_edges[1:end-1] .+ y_edges[2:end])
-
-    t_edges = range(minimum(t), stop=maximum(t), length=n_t_bins+1)
-    t_centers = 0.5 .* (t_edges[1:end-1] .+ t_edges[2:end])
-
-    # Initialize dict of coefficient matrices
-    coeffs = Dict{Int, Matrix{Float64}}()
-    for n in 1:order
-        coeffs[n] = zeros(n_y_bins, n_t_bins)
+    # Per-trajectory estimates with shared binning
+    results = Vector{Any}(undef, n_traj)
+    for r in 1:n_traj
+        results[r] = estimate_kramers_moyal_time(
+            Y[r, :], t;
+            lag=lag, order=order,
+            n_y_bins=n_y_bins, n_t_bins=n_t_bins,
+            y_min=y_min, y_max=y_max, t_min=t_min, t_max=t_max
+        )
     end
-
-    # Loop over bins
-    for i in 1:n_y_bins
-        for j in 1:n_t_bins
-            # Find indices belonging to this (y,t) bin
-            bin_idx = findall(
-                (y .>= y_edges[i]) .& (y .< y_edges[i+1]) .&
-                (t .>= t_edges[j]) .& (t .< t_edges[j+1])
-            )
-
-            if !isempty(bin_idx)
-                # Discard indices too close to end for forward lag
-                valid_idx = filter(k -> k <= N-lag, bin_idx)
-
-                Δy = y[valid_idx .+ lag] .- y[valid_idx]
-
-                for n in 1:order
-                    coeffs[n][i,j] = sum(Δy.^n) / (length(Δy)*factorial(n)*lag)
-                end
-            end
-        end
-    end
-
-    return (y=y_centers, t=t_centers, coefficients=coeffs)
-end
-
-function estimate_kramers_moyal_time_ensemble(
-    Y::Matrix{Float64}, 
-    t::Vector{Float64}, 
-    lag::Int=1, 
-    order::Int=2, 
-    n_y_bins::Int=100, 
-    n_t_bins::Int=50
-)
-    n_traj = size(Y, 1)
-
-    # Compute per-trajectory results
-    results = [estimate_kramers_moyal_time(Y[i, :], t, lag, order, n_y_bins, n_t_bins) for i in 1:n_traj]
 
     y = results[1].y
     τ = results[1].t
     n_y = length(y)
     n_t = length(τ)
 
-    # Init ensemble dict
+    # Weighted ensemble average: weight = per-bin count
     coeffs = Dict{Int, Matrix{Float64}}()
+    total_counts = zeros(Int, n_y, n_t)
+
     for n in 1:order
-        coeffs[n] = zeros(n_y, n_t)
+        num = zeros(n_y, n_t)
+        wts = zeros(Int, n_y, n_t)
+        for r in results
+            C = r.coefficients[n]
+            W = r.counts
+            # accumulate only where C is finite
+            @inbounds for j in 1:n_t, i in 1:n_y
+                w = W[i, j]
+                if w > 0 && isfinite(C[i, j])
+                    num[i, j] += C[i, j] * w
+                    wts[i, j] += w
+                end
+            end
+        end
+        total_counts .+= wts
+        # finalize averages; leave NaN where total weight is zero
+        avg = fill(NaN, n_y, n_t)
+        @inbounds for j in 1:n_t, i in 1:n_y
+            if wts[i, j] > 0
+                avg[i, j] = num[i, j] / wts[i, j]
+            end
+        end
+        coeffs[n] = avg
     end
 
-    # Average over trajectories
-    for n in 1:order
-        stacked = cat([r.coefficients[n] for r in results]..., dims=3) # shape (n_y, n_t, n_traj)
-        coeffs[n] .= mean(stacked, dims=3)[:, :, 1]
-    end
-
-    return (y=y, t=τ, coefficients=coeffs)
+    return (y=y, t=τ, coefficients=coeffs, counts=total_counts)
 end
-
 
 end # module KramersMoyal
