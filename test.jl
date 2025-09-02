@@ -3,8 +3,8 @@ using Pkg
 Pkg.add("Plots")
 Pkg.add("DifferentialEquations")
 Pkg.add("Statistics")
-using Plots
-using DifferentialEquations
+using Plots: plot, plot!, savefig, heatmap
+using DifferentialEquations: SDEProblem, solve, EM, EnsembleProblem, EnsembleSummary, remake
 using Statistics
 
 # Define a SDE
