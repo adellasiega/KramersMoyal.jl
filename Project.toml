@@ -1,0 +1,14 @@
+name = "KramersMoyal"
+uuid = "4b4b477a-fb24-4da5-9b0b-6a66a9263d5e"
+authors = ["Alessandro Della Siega <alessandro.dellasiega@studenti.units.it>"]
+version = "0.1.0"
+
+[deps]
+DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[compat]
+DifferentialEquations = "7.16.1"
+Plots = "1.40.16"
+Statistics = "1.11.1"
