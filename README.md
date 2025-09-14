@@ -224,23 +224,3 @@ where `ΔX = X(t+Δt) - X(t)` and `⟨·⟩` denotes the conditional expectation
 
 For the ensemble case, coefficients are weighted by sample counts to properly handle varying data density across bins and trajectories.
 
-## Performance Tips
-
-- **Bin selection**: Choose `n_bins` based on data size and desired resolution. Too many bins lead to sparse statistics.
-- **Lag choice**: `lag=1` uses adjacent points. Larger lags can reduce noise but may violate Markov assumptions.
-- **Memory efficiency**: For large datasets, consider processing in chunks or using smaller bin counts.
-- **Ensemble weighting**: The package uses sample-count weighting rather than simple averaging for more robust ensemble estimates.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
-
-## License
-
-[Specify your license here, e.g., MIT]
-
-## References
-
-- Kramers, H. A. (1940). Brownian motion in a field of force and the diffusion model of chemical reactions.
-- Moyal, J. E. (1949). Stochastic processes and statistical physics.
-- Friedrich, R., et al. (2011). Extracting model equations from experimental data. Physics Letters A, 271(3), 217-222.
