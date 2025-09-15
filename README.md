@@ -217,10 +217,10 @@ dX(t) = D₁[X,t]dt + √(2D₂[X,t])dW(t) + ...
 The coefficients are estimated as:
 
 ```
-D_n(x) = (1/n!) ⟨(ΔX)ⁿ⟩ / Δt
+D_n(x,t) = (1/n!) ⟨(ΔX)ⁿ⟩ / Δt
 ```
 
-where `ΔX = X(t+Δt) - X(t)` and `⟨·⟩` denotes the conditional expectation given `X(t) = x`.
+where `ΔX = X(t+Δt) - X(t)` and `⟨·⟩` denotes the conditional expectation given `X(t) = x, t=\tau`.
 
 For the ensemble case, coefficients are weighted by sample counts to properly handle varying data density across bins and trajectories.
 
