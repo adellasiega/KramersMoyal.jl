@@ -61,6 +61,7 @@ function estimate_kramers_moyal(y::Vector{Float64},
         for i in 1:n_bins
             Δy = Δy_bins[i]
             counts[i] = length(Δy)
+            
             if !isempty(Δy)
                 push!(D[n], mean(Δy.^n)/(factorial(n)*lag))
             else
@@ -191,7 +192,7 @@ function estimate_kramers_moyal_time(
         bj = t_ids[k]
         push!(idx_bins[(bj-1)*n_y_bins + bi], k)
     end
-
+    """ 
     # Compute per-bin statistics
     @inbounds for j in 1:n_t_bins, i in 1:n_y_bins
         bin_list = idx_bins[(j-1)*n_y_bins + i]
@@ -201,10 +202,40 @@ function estimate_kramers_moyal_time(
             continue
         end
         Δy = y[bin_list .+ lag] .- y[bin_list]
+    
         for n in 1:order
             coeffs[n][i, j] = mean(Δy .^ n) / (factorial(n) * lag)
         end
     end
+    """
+    # Compute per-bin statistics
+    @inbounds for j in 1:n_t_bins, i in 1:n_y_bins
+        bin_list = idx_bins[(j-1)*n_y_bins + i]
+        m = length(bin_list)
+        counts[i, j] = m
+        if m == 0
+            continue
+        end
+        Δy = y[bin_list .+ lag] .- y[bin_list]
+
+        # first-order (drift) -- compute and store
+        d1 = mean(Δy) / (1 * lag)   # factorial(1)=1
+        coeffs[1][i, j] = d1
+
+        # higher orders
+        for n in 2:order
+            if n == 2
+                # subtract τ * D^{(1)} before squaring
+                centered = Δy .- (lag .* d1)
+                coeffs[2][i, j] = mean(centered .^ 2) / (factorial(2) * lag)
+            else
+                # fallback: raw moment / (n! * lag)
+                # (for n>2 you'd normally use central moments or Kramers–Moyal definition)
+                coeffs[n][i, j] = mean(Δy .^ n) / (factorial(n) * lag)
+            end
+        end
+    end
+     
 
     return (y=y_centers, t=t_centers, coefficients=coeffs, counts=counts)
 end
